@@ -1,0 +1,8 @@
+services:
+  explainer:
+    build: .
+    volumes:
+      - .:/app/input
+    environment:
+      - OLLAMA_URL=http://host.docker.internal:11434
+    command: python main.py /app/input/scan.json
