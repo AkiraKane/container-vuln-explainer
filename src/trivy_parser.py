@@ -185,3 +185,66 @@ def run_trivy_scan(target: str, scan_type: str = "image") -> str:
         return '{"error": "Trivy not installed. Install: https://aquasecurity.github.io/trivy/"}'
     except subprocess.TimeoutExpired:
         return '{"error": "Trivy scan timed out (5 minutes)"}'
+
+
+def run_trivy_scan(image: str) -> ScanResult:
+    """Run trivy image --format json and parse output into a ScanResult."""
+    import subprocess
+
+    cmd = ["trivy", "image", "--format", "json", image]
+    try:
+        result = subprocess.run(cmd, capture_output=True, text=True, timeout=300)
+        if result.returncode != 0:
+            return ScanResult(target=image)
+        results = parse_trivy_json(result.stdout)
+        if results:
+            return results[0]
+        return ScanResult(target=image)
+    except FileNotFoundError:
+        return ScanResult(target=image)
+    except subprocess.TimeoutExpired:
+        return ScanResult(target=image)
+
+
+def compare_scans(before: ScanResult, after: ScanResult) -> dict:
+    """Compare two scan results and produce a diff report.
+
+    Returns a dict with keys:
+        fixed: list of CVE ids that were in 'before' but not 'after'
+        remaining: list of CVE ids still present in 'after'
+        new: list of CVE ids that appeared in 'after' but not 'before'
+        summary: dict with counts for fixed/remaining/new and severity breakdowns
+    """
+    before_ids = {v.id: v for v in before.vulnerabilities}
+    after_ids = {v.id: v for v in after.vulnerabilities}
+
+    fixed_ids = set(before_ids.keys()) - set(after_ids.keys())
+    remaining_ids = set(before_ids.keys()) & set(after_ids.keys())
+    new_ids = set(after_ids.keys()) - set(before_ids.keys())
+
+    fixed_vulns = [before_ids[cid] for cid in fixed_ids]
+    remaining_vulns = [after_ids[cid] for cid in remaining_ids]
+    new_vulns = [after_ids[cid] for cid in new_ids]
+
+    def _severity_counts(vulns):
+        counts = {"CRITICAL": 0, "HIGH": 0, "MEDIUM": 0, "LOW": 0}
+        for v in vulns:
+            if v.severity in counts:
+                counts[v.severity] += 1
+        return counts
+
+    return {
+        "fixed": sorted(fixed_ids),
+        "remaining": sorted(remaining_ids),
+        "new": sorted(new_ids),
+        "summary": {
+            "fixed_count": len(fixed_ids),
+            "remaining_count": len(remaining_ids),
+            "new_count": len(new_ids),
+            "before_total": before.total_count,
+            "after_total": after.total_count,
+            "before_severity": _severity_counts(before.vulnerabilities),
+            "after_severity": _severity_counts(after.vulnerabilities),
+            "fixed_severity": _severity_counts(fixed_vulns),
+        },
+    }
