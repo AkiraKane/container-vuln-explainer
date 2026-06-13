@@ -169,7 +169,7 @@ def run_trivy_scan(target: str, scan_type: str = "image") -> str:
     """Run Trivy scan and return JSON output."""
     import subprocess
 
-    cmd = ["trivy", "scan", "--format", "json"]
+    cmd = ["trivy", "image", "--format", "json"]
 
     if scan_type == "image":
         cmd.extend(["--image", target])
